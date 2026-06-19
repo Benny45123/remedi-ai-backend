@@ -118,3 +118,66 @@ async def list_today_appointments() -> list[dict] :
         rows = await conn.fetch(query)
     return [dict(r) for r in rows]
 
+
+# ---------- Conversations (reconnect/resume) ----------
+
+async def create_conversation(locale:str = "en") ->UUID :
+    query = "INSERT INTO conversations (locale) VALUES ($1) RETURNING id"
+    async with get_pool().acquire() as conn:
+        row = conn.fetchrow(query,locale)
+    return row["id"]
+
+async def get_conversation(conversation_id: UUID) ->Optional(dict):
+    query = "SELECT id,locale,state,started_at,ended_at FROM conversations WHERE id = $1"
+    async with get_pool().acquire() as conn:
+        row = await conn.fetchrow(query,conversation_id)
+    if not row:
+        return None
+    d=dict(row)
+    d["state"] = json.loads(d["state"]) if isinstance(d["state"], str) else d["state"]
+    return d
+
+async def update_conversation_state(conversation_id: UUID, state: dict) -> None:
+    query = "UPDATE conversations SET state = $2 WHERE id = $1"
+    async with get_pool().acquire() as conn:
+        await conn.execute(query,conversation_id,json.dumps(state))
+
+
+async def update_conversation_locale(conversation_id: UUID, locale: str) ->None:
+    query = "UPDATE conversations SET locale = $2 WHERE id = $1"
+    async with get_pool().acquire() as conn:
+        await conn.execute(query,conversation_id,locale)
+
+
+async def end_conversation(conversation_id: UUID) -> None :
+    query = "UPDATE conversations SET ended_at = now() WHERE id = $1"
+    async with get_pool().acquire() as conn:
+        await conn.execute(query, conversation_id)
+        
+
+async def add_message(
+    conversation_id: UUID,
+    role: str,
+    text: str,
+    locale: Optional[str] = None
+) ->None :
+    query = """
+        INSERT INTO conversation_messages (conversation_id, role, text, locale)
+        VALUES ($1,$2,$3,$4)
+    """
+    async with get_pool().acquire() as conn:
+        await conn.execute(query, conversation_id, role, text, locale)
+        
+
+async def get_recent_messages(conversation_id: UUID, limit: int = 20) -> list[dict]:
+    """Most recent messages, returned oldest-first so they replay cleanly into LLM context."""
+    query = """
+        SELECT role,text,locale,ts FROM conversation_messages
+        WHERE conversation_id = $1
+        ORDER BY ts DESC LIMIT $2
+    """
+    async with get_pool().acquire() as conn:
+        rows = await conn.fetch(query,conversation_id,limit)
+    return [dict(r) for r in reversed(rows)]
+
+
