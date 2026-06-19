@@ -1,1 +1,3 @@
 asyncpg
+httpx
+dotenv
