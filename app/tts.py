@@ -49,7 +49,7 @@ SARVAM_API_KEY = os.environ.get("SARVAM_API_KEY")
 SARVAM_TTS_URL = "https://api.sarvam.ai/text-to-speech"
 SARVAM_MODEL = os.environ.get("SARVAM_TTS_MODEL", "bulbul:v3")
 SARVAM_LOCALE_MAP = {"te": "te-IN", "hi": "hi-IN", "en": "en-IN"}
-SARVAM_SPEAKER_MAP = {"te": "priya", "en": "ritu", "hi": "roopa"}
+SARVAM_SPEAKER_MAP = {"te": "ritu", "en": "ritu", "hi": "roopa"}
 
 AZURE_SPEECH_KEY = os.environ.get("AZURE_SPEECH_KEY")
 AZURE_SPEECH_REGION = os.environ.get("AZURE_SPEECH_REGION", "centralindia")
@@ -132,7 +132,7 @@ async def _synthesize_sarvam(text: str, locale: str) -> bytes:
         "target_language_code": target_language_code,
         "speaker": speaker,
         "model": SARVAM_MODEL,
-        "enable_processing": True, #normalizes numbers - matters for phn numbers
+        "enable_preprocessing": True, #normalizes numbers - matters for phn numbers
     }
     async with httpx.AsyncClient(timeout= 15.0) as Client:
         response = await Client.post(

@@ -18,6 +18,8 @@ from typing import Optional
 from uuid import UUID
 
 import asyncpg
+from dotenv import load_dotenv
+load_dotenv()
 
 DATABASE_URL = os.environ["DATABASE_URL"]  #SUPABASE Conn string
 
@@ -81,7 +83,7 @@ async def release_slot(slot_id: UUID) ->None :
     async with get_pool().acquire() as conn:
         await conn.execute(query,slot_id)
         
-async def get_slot(slot_id: UUID) -> Optional(dict):
+async def get_slot(slot_id: UUID) -> dict | None:
     query = """
         SELECT s.id AS slot_id , s.doctor_id , s.slot_start , s.status , d.name AS doctor_name
         FROM doctor_slots s JOIN doctors d ON d.id = s.doctor_id
@@ -101,6 +103,14 @@ async def create_patient(name: str, phone : str) -> UUID:
         row = conn.fetchrow(query,name,phone)
     return row["id"]
 
+async def create_appointment(patient_id: UUID, doctor_id: UUID, slot_id: UUID) -> UUID:
+    query = """
+        INSERT INTO appointments (patient_id, doctor_id, slot_id)
+        VALUES ($1, $2, $3) RETURNING id
+    """
+    async with get_pool().acquire() as conn:
+        row = await conn.fetchrow(query, patient_id, doctor_id, slot_id)
+    return row["id"]
 
 async def list_today_appointments() -> list[dict] :
     """Backs the no-auth /admin page — today's bookings, plain and simple."""
@@ -124,10 +134,10 @@ async def list_today_appointments() -> list[dict] :
 async def create_conversation(locale:str = "en") ->UUID :
     query = "INSERT INTO conversations (locale) VALUES ($1) RETURNING id"
     async with get_pool().acquire() as conn:
-        row = conn.fetchrow(query,locale)
+        row = await conn.fetchrow(query,locale)
     return row["id"]
 
-async def get_conversation(conversation_id: UUID) ->Optional(dict):
+async def get_conversation(conversation_id: UUID) ->dict | None:
     query = "SELECT id,locale,state,started_at,ended_at FROM conversations WHERE id = $1"
     async with get_pool().acquire() as conn:
         row = await conn.fetchrow(query,conversation_id)
