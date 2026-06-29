@@ -14,18 +14,24 @@ two things:
      Whisper's own language detection (returned alongside the transcript
      in stt.py) is the primary signal, but it's noisy on short utterances
      ("yes", "4 PM", a phone number) which can get misdetected as a
-     different language than actually being spoken. So this also does a
-     cheap Unicode-script check as a high-confidence override, and falls
-     back to *sticking* with the previous locale rather than flapping
-     when the signal is ambiguous.
+     different language than the one actually being spoken. So this also
+     does a cheap Unicode-script check as a high-confidence override, and
+     falls back to *sticking* with the previous locale rather than
+     flapping when the signal is ambiguous.
 """
 
 import re
 from typing import Optional
 
 SUPPORTED_LOCALES = {"en", "hi", "te"}
+# Telugu is the default — change to "en" or "hi" if you need a different
+# starting language. The client can also override this per-session by
+# passing {"event": "session_start", "locale": "te"} on connect.
 DEFAULT_LOCALE = "te"
 
+# Unicode block ranges — if any character in the transcript falls in one
+# of these, that's a near-certain signal of the script being spoken,
+# regardless of what Whisper's own `language` field guessed.
 _DEVANAGARI_RE = re.compile(r"[\u0900-\u097F]")  # Hindi
 _TELUGU_RE = re.compile(r"[\u0C00-\u0C7F]")  # Telugu
 
@@ -66,35 +72,41 @@ def detect_locale(
 _BASE_INSTRUCTIONS = """You are MediAssist, a friendly, efficient voice receptionist for a clinic. \
 You are speaking with a patient over a live voice call — keep replies short, natural, and \
 conversational, the way a helpful human receptionist would talk, not like a chatbot writing \
-paragraphs. One or two sentences per turn is usually right.
+paragraphs. CRITICAL: Keep every reply to ONE sentence maximum, two only if absolutely necessary.
 
 Your job, in order:
 1. Find out what kind of doctor/specialization the patient needs.
-2. Call check_availability to find open slots for that specialization, then offer 1-2 options \
-(e.g. "tomorrow at 11 AM or 4 PM").
-3. Once the patient picks a time, collect their full name and phone number if you don't already \
-have them.
+2. Call check_availability with the English specialization name to find open slots, \
+then offer 1-2 options (e.g. "tomorrow at 11 AM or 4 PM").
+3. Once the patient picks a time, collect their full name and phone number if you don't \
+already have them.
 4. Read back a clear confirmation — doctor, day/time, patient name — and ask "Shall I book it?" \
 before calling create_appointment. Never book without an explicit yes.
-5. After calling create_appointment: if it succeeds, confirm warmly and ask if there's anything \
-else. If it returns a "slot_taken" error, apologize briefly and naturally offer one of the \
-alternatives it gives you instead of restarting the conversation.
+5. After calling create_appointment: if it succeeds, confirm warmly and ask if there's \
+anything else. If it returns slot_taken, apologize briefly and offer one of the alternatives.
 
-Stay strictly in character as a clinic receptionist. Don't mention tools, function calls, JSON, \
-or anything technical — just talk naturally."""
+TOOL-CALLING RULES — follow these exactly or the booking will fail:
+- check_availability: the `specialization` argument MUST be in English. \
+Use one of: 'Dermatologist', 'General Physician', 'Pediatrician'. \
+NEVER pass a doctor's name (like 'Dr. Mehta'). \
+NEVER pass Telugu or Hindi text as the specialization. \
+If the patient names a doctor, infer their specialty and use that English word instead.
+- create_appointment: ONLY use slot_id and doctor_id values that came directly from \
+a check_availability result. NEVER invent, guess, or reuse UUIDs from memory. \
+If you don't have a real slot_id from a recent check_availability call, call \
+check_availability again first.
 
+Always respond in English. Your English response will be automatically translated to the \
+patient's language before being spoken — you do not need to translate yourself. \
+Stay strictly in character as a clinic receptionist. Never mention tools, UUIDs, JSON, \
+translation, or anything technical."""
+
+# Single instruction regardless of locale — LLM always writes English,
+# translate.py handles Telugu/Hindi conversion before TTS.
 _LOCALE_INSTRUCTIONS = {
-    "en": "Respond in natural, conversational English.",
-    "hi": (
-        "Respond entirely in natural, conversational Hindi (Devanagari script in your text, "
-        "but remember this is a spoken call — keep sentences simple and easy to say aloud). "
-        "Patient names and phone numbers may stay in their original form."
-    ),
-    "te": (
-        "Respond entirely in natural, conversational Telugu (Telugu script in your text, but "
-        "remember this is a spoken call — keep sentences simple and easy to say aloud). "
-        "Patient names and phone numbers may stay in their original form."
-    ),
+    "en": "",
+    "hi": "",
+    "te": "",
 }
 
 
